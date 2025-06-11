@@ -9,9 +9,11 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.demo.config.JwtProvider;
@@ -20,6 +22,7 @@ import com.example.demo.modal.User;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.response.AuthResponse;
 import com.example.demo.service.CustomUserDetailsService;
+import com.example.demo.service.EmailService;
 import com.example.demo.service.TwoFactorOtpService;
 import com.example.demo.utils.OtpUtils;
 
@@ -32,6 +35,8 @@ public class AuthController {
 	private CustomUserDetailsService customUserDetailsService;
 	@Autowired
 	public TwoFactorOtpService twoFactorOtpService;
+	@Autowired
+	private EmailService emailService;
 	
 	@PostMapping("/signup")
 	public ResponseEntity<AuthResponse> register(@RequestBody User user) throws Exception{
@@ -92,6 +97,7 @@ public class AuthController {
 			}
 			
 			TwoFactorOTP newTwoFactorOtp = twoFactorOtpService.createTwoFactorOtp(authUser, otp, jwt);
+			emailService.sendVerificationOtpToEmail(authUser.getEmail(), otp);
 			response.setSession(new TwoFactorOTP().getId());
 			return new ResponseEntity<>(response, HttpStatus.ACCEPTED);
 		}
@@ -115,6 +121,20 @@ public class AuthController {
 		if(!password.equals(userByUsername.getPassword())) throw new BadCredentialsException("Invalid Password ...");
 		
 		return new UsernamePasswordAuthenticationToken(userByUsername,password, userByUsername.getAuthorities());
+	}
+	
+	@PostMapping("/two-factor/otp/{otp}")
+	public ResponseEntity<AuthResponse> verifySigninOtp(@PathVariable String otp,@RequestParam String id){
+		TwoFactorOTP twoFactorOtp = twoFactorOtpService.findById(id);
+		
+		if(twoFactorOtpService.verifyTwoFactorOtp(twoFactorOtp, otp)) {
+			AuthResponse resp = new AuthResponse();
+			resp.setMessage("Two factor authentication successfull");
+			resp.setTwoFactorAuthEnabled(true);
+			resp.setJwt(twoFactorOtp.getJwt());
+			return new ResponseEntity<AuthResponse>(resp,HttpStatus.OK);
+		}
+		throw new BadCredentialsException("Invalid Otp");
 	}
 
 }
